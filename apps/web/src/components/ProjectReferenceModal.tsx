@@ -36,6 +36,21 @@ function projectMeta(project: Project): string {
   return project.metadata?.baseDir || project.metadata?.entryFile || project.metadata?.kind || project.id;
 }
 
+/**
+ * Projects Confirm is allowed to submit: selected ids that the active search
+ * still shows. Filtering does not clear the selection itself, so clearing the
+ * query restores a row that was only hidden.
+ */
+function projectsVisibleToConfirm(
+  projects: readonly Project[],
+  visibleProjects: readonly Project[],
+  selectedIds: readonly string[],
+): Project[] {
+  const visible = new Set(visibleProjects.map((project) => project.id));
+  const selected = new Set(selectedIds);
+  return projects.filter((project) => selected.has(project.id) && visible.has(project.id));
+}
+
 export function ProjectReferenceModal({
   currentProjectId,
   workspaceContext = null,
@@ -123,19 +138,18 @@ export function ProjectReferenceModal({
     return projects.filter((project) => projectSearchText(project).toLowerCase().includes(needle));
   }, [projects, query]);
 
-  const selectedProjects = useMemo(() => {
-    if (!projects) return [];
-    const selected = new Set(selectedIds);
-    return projects.filter((project) => selected.has(project.id));
-  }, [projects, selectedIds]);
+  const visibleSelectedProjects = useMemo(
+    () => (projects ? projectsVisibleToConfirm(projects, visibleProjects, selectedIds) : []),
+    [projects, visibleProjects, selectedIds],
+  );
 
   async function confirm() {
-    if (selectedProjects.length === 0 || pending) return;
+    if (visibleSelectedProjects.length === 0 || pending) return;
     setPending(true);
     setError(null);
     try {
       const selections: ProjectReferenceSelection[] = [];
-      for (const project of selectedProjects) {
+      for (const project of visibleSelectedProjects) {
         // `ensureDir` materializes a managed project's folder before we read
         // its resolved dir, so an empty (never-generated) project references
         // to a real directory instead of a path that fails existence checks.
@@ -263,7 +277,7 @@ export function ProjectReferenceModal({
             type="button"
             className={`${styles.button} ${styles.primary}`}
             onClick={() => void confirm()}
-            disabled={selectedProjects.length === 0 || pending}
+            disabled={visibleSelectedProjects.length === 0 || pending}
           >
             {pending ? t('common.loading') : t('chat.referenceProject.confirm')}
           </button>
